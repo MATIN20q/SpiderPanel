@@ -2526,7 +2526,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
               <label data-i18n="workerDomain.token">Cloudflare API Token</label>
               <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <input id="wd-token" type="password" dir="ltr" autocomplete="off" placeholder="Cloudflare API token" style="flex:1;min-width:190px">
-                <a class="btn btn-g btn-sm" href="https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22workers_kv_storage%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22account_settings%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22zone%22%2C%22type%22%3A%22read%22%7D%5D&accountId=*&zoneId=all&name=SpiderPanel-Worker-Domain" target="_blank" rel="noopener" style="text-decoration:none;white-space:nowrap" data-i18n="workerDomain.getToken">Get token</a>
+                <a class="btn btn-g btn-sm" href="https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22:%22workers_scripts%22,%22type%22:%22edit%22%7D,%7B%22key%22:%22workers_kv_storage%22,%22type%22:%22edit%22%7D,%7B%22key%22:%22workers_routes%22,%22type%22:%22edit%22%7D,%7B%22key%22:%22dns%22,%22type%22:%22edit%22%7D,%7B%22key%22:%22zone%22,%22type%22:%22read%22%7D%5D&accountId=*&zoneId=all&name=Cloudflare+Full+Management" target="_blank" rel="noopener" style="text-decoration:none;white-space:nowrap" data-i18n="workerDomain.getToken">Get token</a>
               </div>
             </div>
             <div class="px-hint" data-i18n="workerDomain.tokenHint">Token stays on the panel server. It needs Workers Scripts, Workers KV, and Zone read permissions.</div>
