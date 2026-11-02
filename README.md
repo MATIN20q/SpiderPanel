@@ -28,7 +28,6 @@
 - [Runtime & API](#-runtime--api)
 - [Built-in Web Proxy](#-built-in-web-proxy-inbound-telegram-web-proxy)
 - [Vercel Domain relay](#vercel-domain-tls--websocket-relay)
-- [Cloudflare Worker Domain](#cloudflare-worker-domain)
 - [UI details](#-ui-details)
 - [Security notes](#-security-notes)
 - [Development](#-development)
@@ -270,7 +269,6 @@ FastAPI application
 ├── railway.toml
 ├── requirements.txt
 ├── start.sh
-├── app.py                # Python-host ASGI entry point (app:app)
 ├── main.py
 ├── twp.py                  # Telegram Web Proxy core (framing, MTProxy crypto, relay)
 └── README.md
@@ -281,8 +279,6 @@ FastAPI application
 # ⚙️ Runtime & API
 
 The backend is built with **FastAPI/Uvicorn**. The repository contains endpoints for authentication, users, subscriptions, nodes, scanners, workers, Telegram bot configuration and runtime information.
-
-For Python application hosts, set the start command to `python app.py` or the ASGI target to `app:app`. The entry point binds to `0.0.0.0` and honors the host-provided `PORT` (default `8080`). The VPS installer below keeps the panel on port `8080`.
 
 The Docker image exposes the panel on:
 
@@ -681,11 +677,5 @@ The relay template lives under `deploy/vercel/`; the Python deploy/delete integr
 ## دامنه Vercel (رله TLS + WebSocket)
 
 در آکاردیون «سیستم»، بخش **Vercel Domain** یک پل WebSocket در Vercel می‌سازد. کانفیگ هر کاربر از `security=tls` و `type=ws` با مسیر `/ws/vl/{uuid}` روی دامنهٔ Production وِرسل استفاده می‌کند؛ پل، اتصال WSS را به همین مسیر روی دامنهٔ عمومی Railway می‌فرستد. توکن Vercel فقط در وضعیت خصوصی سرور ذخیره می‌شود و در API وضعیت برگردانده نمی‌شود.
-
-## Cloudflare Worker Domain
-
-The System accordion includes **Worker Domain**. Enter a Cloudflare API token and deploy the standalone Worker. After deployment, choose **Custom domain** to load zones from that account; SpiderPanel creates a random subdomain under the selected zone and attaches it to the Worker. Deleting the deployment detaches that custom domain, disables the Worker's `workers.dev` route, and removes the Worker and its dedicated KV namespace. The API token is kept in private server state and is never returned to the browser. The token needs Workers Scripts Write, Workers KV Storage Edit, Account Settings Read, and Zone Read.
-
-در آکاردیون «سیستم»، بخش **Worker Domain** با توکن API کلادفلر یک Worker مستقل Deploy می‌کند. بعد از Deploy، با زدن **Custom domain** فهرست zoneهای همان حساب نمایش داده می‌شود و پنل یک زیردامنهٔ تصادفی روی دامنهٔ انتخاب‌شده می‌سازد و به Worker وصل می‌کند. حذف Deploy، دامنهٔ اختصاصی را جدا می‌کند، مسیر `workers.dev` همان Worker را غیرفعال می‌کند و خود Worker و فضای KV اختصاصی آن را حذف می‌کند. توکن فقط در وضعیت خصوصی سرور می‌ماند و به مرورگر برگردانده نمی‌شود. دسترسی‌های لازم: Workers Scripts Write، Workers KV Storage Edit، Account Settings Read و Zone Read.
 
 توکن باید اجازهٔ ساخت Deployment/Project، مدیریت محافظت پروژه و حذف پروژهٔ ساخته‌شده را داشته باشد. پینگ با چهار نمونهٔ `fetch` از مرورگر مدیر به مسیر `/_spider-health` انجام می‌شود؛ بنابراین از اینترنت خود کاربر اندازه‌گیری می‌شود و پینگ ICMP نیست. اتصال WebSocket در Vercel با رسیدن به حداکثر زمان تابع (در این الگو ۳۰۰ ثانیه روی پلن‌های سازگار با Fluid Compute) بسته می‌شود؛ کلاینت باید قابلیت اتصال مجدد داشته باشد. پروژه‌های قدیمی XHTTP به‌عنوان Legacy مشخص می‌شوند؛ برای استفاده از مسیر جدید `/ws/vl/{uuid}` آن‌ها را حذف و دوباره ایجاد کن.

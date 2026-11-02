@@ -21,7 +21,6 @@ PIDFILE="$APP_DIR/spiderpanel.pid"
 LOGFILE="$APP_DIR/spiderpanel.log"
 
 CLI="/usr/local/bin/spiderpanel"
-APP_DIR_FILE="/etc/spider-panel-app-dir"
 
 XRAY="$APP_DIR/xray/xray"
 MTPROXY="/usr/local/bin/mtproto-proxy"
@@ -404,9 +403,6 @@ download_repo() {
     [[ -f "$TMP_ROOT/app/requirements.txt" ]] \
         || fail "requirements.txt not found in repository."
 
-    [[ -f "$TMP_ROOT/app/app.py" ]] \
-        || fail "app.py not found in repository."
-
     ok "Repository downloaded."
 }
 
@@ -458,8 +454,6 @@ deploy() {
         "$APP_DIR/xray"
 
     chmod 755 "$APP_DIR"
-    printf '%s\n' "$APP_DIR" > "$APP_DIR_FILE"
-    chmod 644 "$APP_DIR_FILE"
 
     ok "Application installed."
 }
@@ -1234,7 +1228,7 @@ WorkingDirectory=$APP_DIR
 EnvironmentFile=$ENV_FILE
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
-ExecStart=/bin/sh -c 'exec $VENV/bin/uvicorn app:app --host 0.0.0.0 --port 8080'
+ExecStart=/bin/sh -c 'exec $VENV/bin/uvicorn main:app --host 0.0.0.0 --port 8080'
 Restart=always
 RestartSec=5
 KillSignal=SIGINT
@@ -1322,7 +1316,7 @@ start_panel() {
 
         nohup \
             "$VENV/bin/uvicorn" \
-            app:app \
+            main:app \
             --host 0.0.0.0 \
             --port 8080 \
             >> "$LOGFILE" 2>&1 &
@@ -1723,7 +1717,7 @@ uninstall_panel() {
     fi
 
 
-    rm -f "$CLI" "$APP_DIR_FILE"
+    rm -f "$CLI"
 
     rm -f "$ENV_FILE"
 
@@ -1745,8 +1739,7 @@ create_cli() {
 
 set -e
 
-APP="$(cat /etc/spider-panel-app-dir 2>/dev/null || printf '%s' /opt/SpiderPanel)"
-export SPIDER_APP_DIR="$APP"
+APP="/opt/SpiderPanel"
 
 if [[ ! -f "$APP/start.sh" ]]; then
     echo "SpiderPanel is not installed."
