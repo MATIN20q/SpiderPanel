@@ -1702,6 +1702,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
             <span class="nav-ic"><span class="material-symbols-outlined" style="font-size:18px">language</span></span>
             <span data-i18n="vercelDomain.nav">Vercel Domain</span>
           </div>
+          <div class="nav-item" id="nav-worker-domain" onclick="switchTab('worker-domain',this)">
+            <span class="nav-ic"><span class="material-symbols-outlined" style="font-size:18px">cloud_upload</span></span>
+            <span data-i18n="workerDomain.nav">Worker Domain</span>
+          </div>
         </div>
       </div>
       <div class="nav-item" onclick="switchTab('suggest',this)">
@@ -2510,6 +2514,45 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
         </div>
       </div>
 
+      <!-- CLOUDFLARE WORKER DOMAIN TAB -->
+      <div class="tab-content hidden" id="tab-worker-domain">
+        <div class="panel">
+          <div class="panel-h" style="justify-content:space-between;gap:12px;flex-wrap:wrap">
+            <span class="glow" data-i18n="workerDomain.title">Worker Domain</span>
+            <span id="wd-badge" class="badge badge-b" data-i18n="disconnected">قطع</span>
+          </div>
+          <div id="wd-setup" style="margin-top:12px">
+            <div class="f-g">
+              <label data-i18n="workerDomain.token">Cloudflare API Token</label>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <input id="wd-token" type="password" dir="ltr" autocomplete="off" placeholder="Cloudflare API token" style="flex:1;min-width:190px">
+                <a class="btn btn-g btn-sm" href="https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22workers_kv_storage%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22account_settings%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22zone%22%2C%22type%22%3A%22read%22%7D%5D&accountId=*&zoneId=all&name=SpiderPanel-Worker-Domain" target="_blank" rel="noopener" style="text-decoration:none;white-space:nowrap" data-i18n="workerDomain.getToken">Get token</a>
+              </div>
+            </div>
+            <div class="px-hint" data-i18n="workerDomain.tokenHint">Token stays on the panel server. It needs Workers Scripts, Workers KV, and Zone read permissions.</div>
+            <div class="vd-actions">
+              <select id="wd-account" class="hidden" style="min-width:200px;max-width:100%" aria-label="Cloudflare account"></select>
+              <button id="wd-deploy-btn" type="button" class="btn btn-p" onclick="deployWorkerDomain()"><span class="material-symbols-outlined" style="font-size:16px">rocket_launch</span><span data-i18n="workerDomain.deploy">Deploy Worker</span></button>
+              <button type="button" class="btn btn-g btn-sm" onclick="loadWorkerDomain()"><span class="material-symbols-outlined" style="font-size:15px">refresh</span><span data-i18n="vercelDomain.refresh">Refresh</span></button>
+            </div>
+          </div>
+          <div id="wd-managed" class="hidden" style="margin-top:12px">
+            <div class="set-row"><span class="set-lbl" data-i18n="workerDomain.worker">Worker</span><span id="wd-name" dir="ltr" style="font:12px monospace;color:var(--txt)">—</span></div>
+            <div class="set-row"><span class="set-lbl" data-i18n="workerDomain.subdomain">Worker subdomain</span><a id="wd-subdomain" target="_blank" rel="noopener" dir="ltr" class="vd-domain">—</a></div>
+            <div class="set-row"><span class="set-lbl" data-i18n="workerDomain.customDomain">Custom domain</span><a id="wd-domain" target="_blank" rel="noopener" dir="ltr" class="vd-domain">—</a></div>
+            <div class="set-row"><span class="set-lbl" data-i18n="workerDomain.account">Account</span><span id="wd-account-name" dir="ltr" style="font:12px monospace;color:var(--txt)">—</span></div>
+            <div class="vd-actions">
+              <button id="wd-custom-btn" type="button" class="btn btn-p" onclick="showWorkerDomainZones()"><span class="material-symbols-outlined" style="font-size:16px">add_link</span><span data-i18n="workerDomain.chooseDomain">Custom domain</span></button>
+              <select id="wd-zone" class="hidden" style="min-width:200px;max-width:100%" aria-label="Cloudflare domain"></select>
+              <button id="wd-attach-btn" type="button" class="btn btn-g hidden" onclick="attachWorkerDomain()" data-i18n="workerDomain.attach">Attach to domain</button>
+              <button type="button" class="btn btn-g btn-sm" onclick="loadWorkerDomain()"><span class="material-symbols-outlined" style="font-size:15px">refresh</span><span data-i18n="vercelDomain.refresh">Refresh</span></button>
+              <button type="button" class="btn btn-r btn-sm" onclick="deleteWorkerDomain()"><span class="material-symbols-outlined" style="font-size:16px">delete</span><span data-i18n="workerDomain.delete">Delete Worker and domains</span></button>
+            </div>
+          </div>
+          <div id="wd-message" class="vd-status" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+
       <!-- HELP TAB (last content tab) -->
       <style>
         .hl-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0 8px}
@@ -3215,6 +3258,49 @@ Object.assign(I18N.en, {
   'vercelDomain.clientPingResult': 'Browser ping: median {median} ms · min {min} ms · max {max} ms · successful samples {samples}/4'
 });
 
+Object.assign(I18N.fa, {
+  'workerDomain.nav': 'Worker Domain', 'workerDomain.title': 'اتصال دامنه Worker',
+  'workerDomain.token': 'توکن API کلادفلر', 'workerDomain.getToken': 'دریافت توکن',
+  'workerDomain.tokenHint': 'توکن فقط روی سرور پنل می‌ماند. دسترسی Workers Scripts، Workers KV و Zone Read لازم است.',
+  'workerDomain.deploy': 'Deploy Worker', 'workerDomain.deploying': 'در حال Deploy روی Cloudflare…',
+  'workerDomain.accounts': 'حساب‌های Cloudflare', 'workerDomain.chooseAccount': 'یک حساب انتخاب کنید و دوباره Deploy را بزنید.',
+  'workerDomain.worker': 'Worker', 'workerDomain.subdomain': 'ساب‌دامین Worker',
+  'workerDomain.customDomain': 'دامنه اختصاصی', 'workerDomain.account': 'حساب',
+  'workerDomain.chooseDomain': 'دامنه اختصاصی', 'workerDomain.attach': 'اتصال دامنه',
+  'workerDomain.loadingZones': 'در حال دریافت دامنه‌ها…', 'workerDomain.noZones': 'دامنه‌ای در این حساب پیدا نشد.',
+  'workerDomain.attached': 'دامنه تصادفی ساخته و به Worker متصل شد.',
+  'workerDomain.created': 'Worker روی Cloudflare Deploy شد.', 'workerDomain.delete': 'حذف Worker و دامنه‌ها',
+  'workerDomain.confirmDelete': 'Worker حذف شود؟ دامنه اختصاصی، ساب‌دامین Worker و فضای KV ساخته‌شده نیز حذف می‌شوند.',
+  'workerDomain.deleted': 'Worker و دامنه‌های آن حذف شدند.',
+  'workerDomain.enterToken': 'ابتدا توکن Cloudflare را وارد کنید.',
+  'workerDomain.selectAccount': 'یک حساب Cloudflare انتخاب کنید.',
+  'workerDomain.loadError': 'وضعیت Worker Domain دریافت نشد.',
+  'workerDomain.deployError': 'Deploy روی Cloudflare ناموفق بود.',
+  'workerDomain.domainError': 'اتصال دامنه اختصاصی ناموفق بود.',
+  'workerDomain.deleteError': 'حذف Worker یا دامنه‌ها ناموفق بود.'
+});
+Object.assign(I18N.en, {
+  'workerDomain.nav': 'Worker Domain', 'workerDomain.title': 'Connect Worker Domain',
+  'workerDomain.token': 'Cloudflare API Token', 'workerDomain.getToken': 'Get token',
+  'workerDomain.tokenHint': 'The token stays on the panel server. Workers Scripts, Workers KV, and Zone Read permissions are required.',
+  'workerDomain.deploy': 'Deploy Worker', 'workerDomain.deploying': 'Deploying to Cloudflare…',
+  'workerDomain.accounts': 'Cloudflare accounts', 'workerDomain.chooseAccount': 'Choose an account, then press Deploy again.',
+  'workerDomain.worker': 'Worker', 'workerDomain.subdomain': 'Worker subdomain',
+  'workerDomain.customDomain': 'Custom domain', 'workerDomain.account': 'Account',
+  'workerDomain.chooseDomain': 'Custom domain', 'workerDomain.attach': 'Attach domain',
+  'workerDomain.loadingZones': 'Loading domains…', 'workerDomain.noZones': 'No domains were found in this account.',
+  'workerDomain.attached': 'A random subdomain was created and attached to the Worker.',
+  'workerDomain.created': 'Worker deployed to Cloudflare.', 'workerDomain.delete': 'Delete Worker and domains',
+  'workerDomain.confirmDelete': 'Delete this Worker? Its custom domain, workers.dev subdomain route, and created KV namespace will also be removed.',
+  'workerDomain.deleted': 'Worker and its domains were deleted.',
+  'workerDomain.enterToken': 'Enter a Cloudflare token first.',
+  'workerDomain.selectAccount': 'Choose a Cloudflare account.',
+  'workerDomain.loadError': 'Could not load Worker Domain status.',
+  'workerDomain.deployError': 'Cloudflare deployment failed.',
+  'workerDomain.domainError': 'Could not attach the custom domain.',
+  'workerDomain.deleteError': 'Could not delete the Worker or its domains.'
+});
+
 function t(key) {
   var dict = I18N[LANG] || I18N.fa;
   return dict[key] != null ? dict[key] : (I18N.fa[key] != null ? I18N.fa[key] : key);
@@ -3689,7 +3775,7 @@ function toggleNodeAccordion(btn) {
 
 function switchTab(tab, el) {
   if (['users','inbounds','scanner','proxy','speedtest'].indexOf(tab) >= 0) toggleNavAccordion(true);
-  if (['settings','advanced','help','notif','vercel-domain'].indexOf(tab) >= 0) toggleSystemNavAccordion(true);
+  if (['settings','advanced','help','notif','vercel-domain','worker-domain'].indexOf(tab) >= 0) toggleSystemNavAccordion(true);
   var previousTab = document.querySelector('.tab-content:not(.hidden)');
   document.querySelectorAll('.nav-item').forEach(function(n) { n.classList.remove('active'); });
   if (el) el.classList.add('active');
@@ -3712,7 +3798,7 @@ function switchTab(tab, el) {
   target.classList.remove('hidden');
   target.style.setProperty('margin-top', '0px', 'important');
   target.style.setProperty('top', '0px', 'important');
-  if (tab === 'contact' || tab === 'settings' || tab === 'nodes' || tab === 'advanced' || tab === 'help' || tab === 'notif' || tab === 'vercel-domain' || tab === 'proxy' || tab === 'suggest' || tab === 'tm') {
+  if (tab === 'contact' || tab === 'settings' || tab === 'nodes' || tab === 'advanced' || tab === 'help' || tab === 'notif' || tab === 'vercel-domain' || tab === 'worker-domain' || tab === 'proxy' || tab === 'suggest' || tab === 'tm') {
     target.style.setProperty('position', 'static', 'important');
     target.style.setProperty('flex', 'none', 'important');
   }
@@ -3759,6 +3845,7 @@ var TAB_LOADERS = {
   inbounds: function () { return loadInbounds(); },
   scanner: function () { return scnInit(); },
   'vercel-domain': function () { return loadVercelDomain(); },
+  'worker-domain': function () { return loadWorkerDomain(); },
   tunnel: function () { return loadTunnel(); },
   nodes: function () { return loadNodes(); },
   tm: function () { return loadTM(); },
@@ -6560,6 +6647,158 @@ async function pingVercelDomain() {
   var sorted = samples.slice().sort(function (a, b) { return a - b; });
   var median = sorted.length % 2 ? sorted[(sorted.length - 1) / 2] : Math.round((sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2);
   if (out) out.textContent = t('vercelDomain.clientPingResult').replace('{median}', median).replace('{min}', sorted[0]).replace('{max}', sorted[sorted.length - 1]).replace('{samples}', samples.length);
+}
+
+// ═══ CLOUDFLARE WORKER DOMAIN ═══
+var WD_STATE = {connected: false};
+var WD_ACCOUNTS = [];
+
+function wdMessage(message, isError) {
+  var el = $id('wd-message');
+  if (!el) return;
+  el.textContent = message || '';
+  el.style.color = isError ? 'var(--red)' : 'var(--txt2)';
+}
+
+function renderWorkerDomain(data) {
+  WD_STATE = data || {connected: false};
+  var connected = !!WD_STATE.connected;
+  var setup = $id('wd-setup'), managed = $id('wd-managed'), badge = $id('wd-badge');
+  if (setup) setup.classList.toggle('hidden', connected);
+  if (managed) managed.classList.toggle('hidden', !connected);
+  if (badge) {
+    badge.textContent = connected ? t('connected') : t('disconnected');
+    badge.className = 'badge ' + (connected ? 'badge-g' : 'badge-r');
+  }
+  var name = $id('wd-name'); if (name) name.textContent = WD_STATE.worker_name || '—';
+  var sub = $id('wd-subdomain');
+  if (sub) {
+    sub.textContent = WD_STATE.worker_domain || '—';
+    sub.href = WD_STATE.worker_url || '#';
+  }
+  var domain = $id('wd-domain');
+  if (domain) {
+    domain.textContent = WD_STATE.custom_domain || '—';
+    domain.href = WD_STATE.custom_domain ? 'https://' + WD_STATE.custom_domain : '#';
+  }
+  var account = $id('wd-account-name'); if (account) account.textContent = WD_STATE.account_name || '—';
+  var customBtn = $id('wd-custom-btn'); if (customBtn) customBtn.classList.toggle('hidden', !!WD_STATE.custom_domain);
+  var attachBtn = $id('wd-attach-btn'); if (attachBtn && WD_STATE.custom_domain) attachBtn.classList.add('hidden');
+  if (WD_STATE.last_error) wdMessage(WD_STATE.last_error, true);
+  else wdMessage('', false);
+}
+
+async function loadWorkerDomainAccounts(token) {
+  var input = $id('wd-token');
+  token = String(token || (input && input.value) || '').trim();
+  if (!token) { toast(t('workerDomain.enterToken'), 'err'); return []; }
+  var result = await api('/api/system/worker-domain/accounts', {method: 'POST', body: {token: token}});
+  WD_ACCOUNTS = Array.isArray(result.accounts) ? result.accounts : [];
+  var select = $id('wd-account');
+  if (select) {
+    select.replaceChildren();
+    var first = document.createElement('option');
+    first.value = '';
+    first.textContent = t('workerDomain.accounts');
+    select.appendChild(first);
+    WD_ACCOUNTS.forEach(function (account) {
+      var option = document.createElement('option');
+      option.value = account.id;
+      option.textContent = account.name;
+      select.appendChild(option);
+    });
+    select.classList.toggle('hidden', WD_ACCOUNTS.length <= 1);
+    if (WD_ACCOUNTS.length === 1) select.value = WD_ACCOUNTS[0].id;
+  }
+  return WD_ACCOUNTS;
+}
+
+async function loadWorkerDomain() {
+  try {
+    var data = await api('/api/system/worker-domain');
+    renderWorkerDomain(data);
+  } catch (e) { wdMessage(e.message || t('workerDomain.loadError'), true); }
+}
+
+async function deployWorkerDomain() {
+  var input = $id('wd-token'), button = $id('wd-deploy-btn');
+  var token = input ? input.value.trim() : '';
+  if (!token) { toast(t('workerDomain.enterToken'), 'err'); if (input) input.focus(); return; }
+  try {
+    if (!WD_ACCOUNTS.length) await loadWorkerDomainAccounts(token);
+    var select = $id('wd-account');
+    var accountId = select && select.value;
+    if (!accountId && WD_ACCOUNTS.length === 1) accountId = WD_ACCOUNTS[0].id;
+    if (!accountId) { toast(t('workerDomain.selectAccount'), 'warn'); if (select) select.classList.remove('hidden'); return; }
+    if (button) { button.disabled = true; button.textContent = t('workerDomain.deploying'); }
+    wdMessage(t('workerDomain.deploying'), false);
+    var data = await api('/api/system/worker-domain', {method: 'POST', body: {token: token, account_id: accountId}});
+    if (input) input.value = '';
+    WD_ACCOUNTS = [];
+    renderWorkerDomain(data);
+    toast(t('workerDomain.created'), 'ok');
+  } catch (e) {
+    wdMessage(e.message || t('workerDomain.deployError'), true);
+    toast(e.message || t('workerDomain.deployError'), 'err');
+  } finally {
+    if (button) { button.disabled = false; button.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px">rocket_launch</span><span data-i18n="workerDomain.deploy">' + esc(t('workerDomain.deploy')) + '</span>'; }
+  }
+}
+
+async function showWorkerDomainZones() {
+  var btn = $id('wd-custom-btn'), select = $id('wd-zone'), attach = $id('wd-attach-btn');
+  if (btn) { btn.disabled = true; btn.textContent = t('workerDomain.loadingZones'); }
+  try {
+    var result = await api('/api/system/worker-domain/zones');
+    var zones = Array.isArray(result.zones) ? result.zones : [];
+    if (!zones.length) { wdMessage(t('workerDomain.noZones'), true); return; }
+    if (select) {
+      select.replaceChildren();
+      zones.forEach(function (zone) {
+        var option = document.createElement('option');
+        option.value = zone.id;
+        option.textContent = zone.name;
+        select.appendChild(option);
+      });
+      select.classList.remove('hidden');
+    }
+    if (attach) attach.classList.remove('hidden');
+    wdMessage('', false);
+  } catch (e) { wdMessage(e.message || t('workerDomain.domainError'), true); }
+  finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px">add_link</span><span>' + esc(t('workerDomain.chooseDomain')) + '</span>'; }
+  }
+}
+
+async function attachWorkerDomain() {
+  var select = $id('wd-zone'), button = $id('wd-attach-btn');
+  if (!select || !select.value) return;
+  if (button) { button.disabled = true; button.textContent = t('workerDomain.loadingZones'); }
+  try {
+    var data = await api('/api/system/worker-domain/custom-domain', {method: 'POST', body: {zone_id: select.value}});
+    select.classList.add('hidden');
+    if (button) button.classList.add('hidden');
+    renderWorkerDomain(data);
+    toast(t('workerDomain.attached'), 'ok');
+  } catch (e) {
+    wdMessage(e.message || t('workerDomain.domainError'), true);
+    toast(e.message || t('workerDomain.domainError'), 'err');
+  } finally { if (button) { button.disabled = false; button.textContent = t('workerDomain.attach'); } }
+}
+
+async function deleteWorkerDomain() {
+  if (!confirm(t('workerDomain.confirmDelete'))) return;
+  try {
+    var data = await api('/api/system/worker-domain', {method: 'DELETE'});
+    renderWorkerDomain(data);
+    var select = $id('wd-zone'), attach = $id('wd-attach-btn');
+    if (select) select.classList.add('hidden');
+    if (attach) attach.classList.add('hidden');
+    toast(t('workerDomain.deleted'), 'ok');
+  } catch (e) {
+    wdMessage(e.message || t('workerDomain.deleteError'), true);
+    toast(e.message || t('workerDomain.deleteError'), 'err');
+  }
 }
 
 // ═══ CLOUDFLARE WORKER — Tunnel / Reverse / Worker as three sections ═══
