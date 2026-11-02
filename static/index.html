@@ -2549,6 +2549,22 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
               <button type="button" class="btn btn-r btn-sm" onclick="deleteWorkerDomain()"><span class="material-symbols-outlined" style="font-size:16px">delete</span><span data-i18n="workerDomain.delete">Delete Worker and domains</span></button>
             </div>
           </div>
+          <div id="wd-config-panel" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px">
+            <div class="panel-h" style="justify-content:space-between;gap:8px;flex-wrap:wrap">
+              <span class="glow" data-i18n="workerDomain.configTitle">Worker configuration</span>
+              <span id="wd-config-count" class="badge badge-g">0</span>
+            </div>
+            <div class="px-hint" data-i18n="workerDomain.configHint">Choose a user to get a VLESS + TLS/WS config. Refresh syncs current users to the Worker.</div>
+            <div class="f-g" style="margin-top:10px">
+              <label data-i18n="workerDomain.user">User</label>
+              <select id="wd-user-select" onchange="selectWorkerDomainConfig()" style="width:100%"></select>
+            </div>
+            <div id="wd-config-empty" class="px-hint" data-i18n="workerDomain.noUsers">Connect a Worker and sync users to load configurations.</div>
+            <textarea class="vd-code" id="wd-config-output" readonly spellcheck="false" placeholder="vless://..." aria-label="Worker WebSocket config"></textarea>
+            <div class="vd-actions">
+              <button type="button" class="btn btn-p" onclick="copyWorkerDomainConfig()"><span class="material-symbols-outlined" style="font-size:16px">content_copy</span><span data-i18n="workerDomain.copyConfig">Copy configuration</span></button>
+            </div>
+          </div>
           <div id="wd-message" class="vd-status" role="status" aria-live="polite"></div>
         </div>
       </div>
@@ -3272,6 +3288,13 @@ Object.assign(I18N.fa, {
   'workerDomain.created': 'Worker روی Cloudflare Deploy شد.', 'workerDomain.delete': 'حذف Worker و دامنه‌ها',
   'workerDomain.confirmDelete': 'Worker حذف شود؟ دامنه اختصاصی، ساب‌دامین Worker و فضای KV ساخته‌شده نیز حذف می‌شوند.',
   'workerDomain.deleted': 'Worker و دامنه‌های آن حذف شدند.',
+  'workerDomain.configTitle': 'کانفیگ Worker',
+  'workerDomain.configHint': 'کاربر را انتخاب کنید تا کانفیگ VLESS + TLS/WS ساخته شود. با بروزرسانی، کاربران پنل در Worker همگام می‌شوند.',
+  'workerDomain.user': 'کاربر', 'workerDomain.selectUser': 'یک کاربر را انتخاب کنید',
+  'workerDomain.noUsers': 'ابتدا Worker را Deploy کنید و کاربران را همگام کنید تا فهرست انتخاب کاربر نمایش داده شود.',
+  'workerDomain.copyConfig': 'کپی کانفیگ', 'workerDomain.noConfig': 'کانفیگی برای کپی وجود ندارد.',
+  'workerDomain.syncing': 'در حال همگام‌سازی کاربران با Worker…',
+  'workerDomain.synced': 'کاربران با Worker همگام شدند.',
   'workerDomain.enterToken': 'ابتدا توکن Cloudflare را وارد کنید.',
   'workerDomain.selectAccount': 'یک حساب Cloudflare انتخاب کنید.',
   'workerDomain.loadError': 'وضعیت Worker Domain دریافت نشد.',
@@ -3293,6 +3316,13 @@ Object.assign(I18N.en, {
   'workerDomain.created': 'Worker deployed to Cloudflare.', 'workerDomain.delete': 'Delete Worker and domains',
   'workerDomain.confirmDelete': 'Delete this Worker? Its custom domain, workers.dev subdomain route, and created KV namespace will also be removed.',
   'workerDomain.deleted': 'Worker and its domains were deleted.',
+  'workerDomain.configTitle': 'Worker configuration',
+  'workerDomain.configHint': 'Choose a user to get a VLESS + TLS/WS config. Refresh syncs current users to the Worker.',
+  'workerDomain.user': 'User', 'workerDomain.selectUser': 'Select a user',
+  'workerDomain.noUsers': 'Deploy a Worker and sync users to load the user list.',
+  'workerDomain.copyConfig': 'Copy configuration', 'workerDomain.noConfig': 'There is no configuration to copy.',
+  'workerDomain.syncing': 'Syncing users to the Worker…',
+  'workerDomain.synced': 'Users synced to the Worker.',
   'workerDomain.enterToken': 'Enter a Cloudflare token first.',
   'workerDomain.selectAccount': 'Choose a Cloudflare account.',
   'workerDomain.loadError': 'Could not load Worker Domain status.',
@@ -6652,6 +6682,7 @@ async function pingVercelDomain() {
 // ═══ CLOUDFLARE WORKER DOMAIN ═══
 var WD_STATE = {connected: false};
 var WD_ACCOUNTS = [];
+var WD_CONFIGS = [];
 
 function wdMessage(message, isError) {
   var el = $id('wd-message');
@@ -6717,7 +6748,68 @@ async function loadWorkerDomain() {
   try {
     var data = await api('/api/system/worker-domain');
     renderWorkerDomain(data);
+    if (data && data.connected) await loadWorkerDomainConfigs();
+    else renderWorkerDomainConfigs({configs: []});
   } catch (e) { wdMessage(e.message || t('workerDomain.loadError'), true); }
+}
+
+function renderWorkerDomainConfigs(data) {
+  WD_CONFIGS = Array.isArray(data && data.configs) ? data.configs : [];
+  var select = $id('wd-user-select'), count = $id('wd-config-count');
+  var oldValue = select ? select.value : '';
+  if (count) count.textContent = String(WD_CONFIGS.length);
+  if (select) {
+    select.replaceChildren();
+    var placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = t('workerDomain.selectUser');
+    placeholder.disabled = WD_CONFIGS.length > 0;
+    select.appendChild(placeholder);
+    WD_CONFIGS.forEach(function (item, index) {
+      var option = document.createElement('option');
+      option.value = String(index);
+      option.textContent = (item.username || item.user_id || ('User ' + (index + 1))) + (item.active ? '' : ' · ' + t('inactive'));
+      select.appendChild(option);
+    });
+    if (oldValue !== '' && Number(oldValue) < WD_CONFIGS.length) select.value = oldValue;
+    else if (WD_CONFIGS.length) select.value = '0';
+    select.disabled = !WD_CONFIGS.length;
+  }
+  var empty = $id('wd-config-empty'); if (empty) empty.classList.toggle('hidden', WD_CONFIGS.length > 0);
+  var output = $id('wd-config-output');
+  if (output) output.value = WD_CONFIGS.length ? String(WD_CONFIGS[Number(select && select.value) || 0].config || '') : '';
+}
+
+async function loadWorkerDomainConfigs() {
+  wdMessage(t('workerDomain.syncing'), false);
+  try {
+    var data = await api('/api/system/worker-domain/configs');
+    renderWorkerDomainConfigs(data);
+    wdMessage(t('workerDomain.synced'), false);
+  } catch (e) {
+    renderWorkerDomainConfigs({configs: []});
+    wdMessage(e.message || t('workerDomain.loadError'), true);
+  }
+}
+
+function selectWorkerDomainConfig() {
+  var select = $id('wd-user-select'), output = $id('wd-config-output');
+  if (!select || !output) return;
+  var item = WD_CONFIGS[Number(select.value)];
+  output.value = item ? String(item.config || '') : '';
+}
+
+async function copyWorkerDomainConfig() {
+  var output = $id('wd-config-output');
+  if (!output || !output.value) { toast(t('workerDomain.noConfig'), 'err'); return; }
+  try {
+    if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(output.value);
+    else {
+      output.focus(); output.select();
+      if (!document.execCommand('copy')) throw new Error('copy failed');
+    }
+    toast(t('copied'), 'ok');
+  } catch (e) { toast(t('errCopy'), 'err'); }
 }
 
 async function deployWorkerDomain() {
@@ -6736,6 +6828,7 @@ async function deployWorkerDomain() {
     if (input) input.value = '';
     WD_ACCOUNTS = [];
     renderWorkerDomain(data);
+    await loadWorkerDomainConfigs();
     toast(t('workerDomain.created'), 'ok');
   } catch (e) {
     wdMessage(e.message || t('workerDomain.deployError'), true);
@@ -6779,6 +6872,7 @@ async function attachWorkerDomain() {
     select.classList.add('hidden');
     if (button) button.classList.add('hidden');
     renderWorkerDomain(data);
+    await loadWorkerDomainConfigs();
     toast(t('workerDomain.attached'), 'ok');
   } catch (e) {
     wdMessage(e.message || t('workerDomain.domainError'), true);
@@ -6791,6 +6885,7 @@ async function deleteWorkerDomain() {
   try {
     var data = await api('/api/system/worker-domain', {method: 'DELETE'});
     renderWorkerDomain(data);
+    renderWorkerDomainConfigs({configs: []});
     var select = $id('wd-zone'), attach = $id('wd-attach-btn');
     if (select) select.classList.add('hidden');
     if (attach) attach.classList.add('hidden');
