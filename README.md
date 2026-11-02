@@ -28,6 +28,7 @@
 - [Runtime & API](#-runtime--api)
 - [Built-in Web Proxy](#-built-in-web-proxy-inbound-telegram-web-proxy)
 - [Vercel Domain relay](#vercel-domain-tls--websocket-relay)
+- [Cloudflare Pages Domain](#cloudflare-pages-domain)
 - [UI details](#-ui-details)
 - [Security notes](#-security-notes)
 - [Development](#-development)
@@ -269,6 +270,7 @@ FastAPI application
 ├── railway.toml
 ├── requirements.txt
 ├── start.sh
+├── app.py                # Python-host ASGI entry point (app:app)
 ├── main.py
 ├── twp.py                  # Telegram Web Proxy core (framing, MTProxy crypto, relay)
 └── README.md
@@ -279,6 +281,8 @@ FastAPI application
 # ⚙️ Runtime & API
 
 The backend is built with **FastAPI/Uvicorn**. The repository contains endpoints for authentication, users, subscriptions, nodes, scanners, workers, Telegram bot configuration and runtime information.
+
+For Python application hosts, set the start command to `python app.py` or the ASGI target to `app:app`. The entry point binds to `0.0.0.0` and honors the host-provided `PORT` (default `8080`). The VPS installer below keeps the panel on port `8080`.
 
 The Docker image exposes the panel on:
 
@@ -677,5 +681,11 @@ The relay template lives under `deploy/vercel/`; the Python deploy/delete integr
 ## دامنه Vercel (رله TLS + WebSocket)
 
 در آکاردیون «سیستم»، بخش **Vercel Domain** یک پل WebSocket در Vercel می‌سازد. کانفیگ هر کاربر از `security=tls` و `type=ws` با مسیر `/ws/vl/{uuid}` روی دامنهٔ Production وِرسل استفاده می‌کند؛ پل، اتصال WSS را به همین مسیر روی دامنهٔ عمومی Railway می‌فرستد. توکن Vercel فقط در وضعیت خصوصی سرور ذخیره می‌شود و در API وضعیت برگردانده نمی‌شود.
+
+## Cloudflare Pages Domain
+
+The System accordion includes **Pages Domain**. Enter a Cloudflare API token and SpiderPanel creates a Direct Upload Pages project, deploys `worker/worker.js` as an Advanced Mode `_worker.js`, and binds a dedicated KV namespace. The project is served at `<project>.pages.dev`. Choose **Custom domain** to load zones from the selected account; SpiderPanel creates a random subdomain in the selected zone and attaches it to the Pages project. Deleting the deployment removes the Pages domain association, its matching generated DNS CNAME, the Pages project (including its `pages.dev` hostname), and its KV namespace. The API token is kept in private server state and is never returned to the browser. Choose a panel user to display and copy a VLESS + TLS/WS configuration; opening or refreshing this section syncs current user state to the Pages worker, and user changes trigger a background sync. The token needs Pages Edit, Workers KV Edit, Memberships Read, Zone Read, and DNS Edit to remove the generated DNS record.
+
+در آکاردیون «سیستم»، بخش **Pages Domain** با توکن API کلادفلر یک پروژهٔ Direct Upload در Pages می‌سازد، فایل `worker/worker.js` را به‌صورت `_worker.js` در حالت Advanced آپلود می‌کند و KV اختصاصی را به آن متصل می‌کند. آدرس پیش‌فرض پروژه `<project>.pages.dev` است. با زدن **Custom domain**، zoneهای حساب انتخابی نمایش داده می‌شوند و پنل یک ساب‌دامین تصادفی روی zone انتخاب‌شده ایجاد و به پروژه Pages وصل می‌کند. حذف، اتصال دامنه، CNAME ساخته‌شده، خود پروژه Pages (و hostname آن در `pages.dev`) و KV اختصاصی را پاک می‌کند. توکن فقط در وضعیت خصوصی سرور ذخیره می‌شود. از فهرست، کاربر را انتخاب کنید تا کانفیگ VLESS + TLS/WS نمایش داده و کپی شود؛ بازکردن یا بروزرسانی این بخش و تغییرات کاربران، وضعیت کاربر را با Worker داخل Pages همگام می‌کند. دسترسی‌های توکن: Pages Edit، Workers KV Edit، Memberships Read، Zone Read و DNS Edit برای حذف رکورد DNS ساخته‌شده.
 
 توکن باید اجازهٔ ساخت Deployment/Project، مدیریت محافظت پروژه و حذف پروژهٔ ساخته‌شده را داشته باشد. پینگ با چهار نمونهٔ `fetch` از مرورگر مدیر به مسیر `/_spider-health` انجام می‌شود؛ بنابراین از اینترنت خود کاربر اندازه‌گیری می‌شود و پینگ ICMP نیست. اتصال WebSocket در Vercel با رسیدن به حداکثر زمان تابع (در این الگو ۳۰۰ ثانیه روی پلن‌های سازگار با Fluid Compute) بسته می‌شود؛ کلاینت باید قابلیت اتصال مجدد داشته باشد. پروژه‌های قدیمی XHTTP به‌عنوان Legacy مشخص می‌شوند؛ برای استفاده از مسیر جدید `/ws/vl/{uuid}` آن‌ها را حذف و دوباره ایجاد کن.
