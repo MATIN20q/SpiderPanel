@@ -2548,8 +2548,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
               <button type="button" class="btn btn-g btn-sm" onclick="loadWorkerDomain()"><span class="material-symbols-outlined" style="font-size:15px">refresh</span><span data-i18n="vercelDomain.refresh">Refresh</span></button>
               <button type="button" class="btn btn-r btn-sm" onclick="deleteWorkerDomain()"><span class="material-symbols-outlined" style="font-size:16px">delete</span><span data-i18n="workerDomain.delete">Delete Worker and domains</span></button>
             </div>
-            <div class="panel-h" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;justify-content:space-between;gap:8px;flex-wrap:wrap">
-              <span class="glow" data-i18n="workerDomain.configTitle">Worker configuration</span>
+          </div>
+          <div id="wd-message" class="vd-status" role="status" aria-live="polite"></div>
+        </div>
+        <div class="panel" id="wd-config-panel" style="margin-top:14px">
+            <div class="panel-h" style="justify-content:space-between;gap:8px;flex-wrap:wrap">
+              <span class="glow" data-i18n="workerDomain.configTitle">Worker users and configuration</span>
               <span id="wd-config-count" class="badge badge-g">0</span>
             </div>
             <div class="px-hint" data-i18n="workerDomain.configHint">Choose a user to get a VLESS + TLS/WS config. Refresh syncs current users to the Worker.</div>
@@ -2557,13 +2561,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
               <label data-i18n="workerDomain.user">User</label>
               <select id="wd-user-select" onchange="selectWorkerDomainConfig()" style="width:100%"></select>
             </div>
-            <div id="wd-config-empty" class="px-hint hidden" data-i18n="workerDomain.noUsers">No valid user configs found.</div>
+            <div id="wd-config-empty" class="px-hint" data-i18n="workerDomain.noUsers">Connect a Worker and sync users to load configurations.</div>
             <textarea class="vd-code" id="wd-config-output" readonly spellcheck="false" placeholder="vless://..." aria-label="Worker WebSocket config"></textarea>
             <div class="vd-actions">
               <button type="button" class="btn btn-p" onclick="copyWorkerDomainConfig()"><span class="material-symbols-outlined" style="font-size:16px">content_copy</span><span data-i18n="workerDomain.copyConfig">Copy configuration</span></button>
             </div>
-          </div>
-          <div id="wd-message" class="vd-status" role="status" aria-live="polite"></div>
         </div>
       </div>
 
@@ -3286,9 +3288,10 @@ Object.assign(I18N.fa, {
   'workerDomain.created': 'Worker روی Cloudflare Deploy شد.', 'workerDomain.delete': 'حذف Worker و دامنه‌ها',
   'workerDomain.confirmDelete': 'Worker حذف شود؟ دامنه اختصاصی، ساب‌دامین Worker و فضای KV ساخته‌شده نیز حذف می‌شوند.',
   'workerDomain.deleted': 'Worker و دامنه‌های آن حذف شدند.',
-  'workerDomain.configTitle': 'کانفیگ Worker',
+  'workerDomain.configTitle': 'کاربران و کانفیگ Worker',
   'workerDomain.configHint': 'کاربر را انتخاب کنید تا کانفیگ VLESS + TLS/WS ساخته شود. با بروزرسانی، کاربران پنل در Worker همگام می‌شوند.',
-  'workerDomain.user': 'کاربر', 'workerDomain.noUsers': 'کانفیگ معتبری برای کاربران پیدا نشد.',
+  'workerDomain.user': 'کاربر', 'workerDomain.selectUser': 'یک کاربر را انتخاب کنید',
+  'workerDomain.noUsers': 'ابتدا Worker را Deploy کنید و کاربران را همگام کنید تا فهرست انتخاب کاربر نمایش داده شود.',
   'workerDomain.copyConfig': 'کپی کانفیگ', 'workerDomain.noConfig': 'کانفیگی برای کپی وجود ندارد.',
   'workerDomain.syncing': 'در حال همگام‌سازی کاربران با Worker…',
   'workerDomain.synced': 'کاربران با Worker همگام شدند.',
@@ -3313,9 +3316,10 @@ Object.assign(I18N.en, {
   'workerDomain.created': 'Worker deployed to Cloudflare.', 'workerDomain.delete': 'Delete Worker and domains',
   'workerDomain.confirmDelete': 'Delete this Worker? Its custom domain, workers.dev subdomain route, and created KV namespace will also be removed.',
   'workerDomain.deleted': 'Worker and its domains were deleted.',
-  'workerDomain.configTitle': 'Worker configuration',
+  'workerDomain.configTitle': 'Worker users and configuration',
   'workerDomain.configHint': 'Choose a user to get a VLESS + TLS/WS config. Refresh syncs current users to the Worker.',
-  'workerDomain.user': 'User', 'workerDomain.noUsers': 'No valid user configs found.',
+  'workerDomain.user': 'User', 'workerDomain.selectUser': 'Select a user',
+  'workerDomain.noUsers': 'Deploy a Worker and sync users to load the user list.',
   'workerDomain.copyConfig': 'Copy configuration', 'workerDomain.noConfig': 'There is no configuration to copy.',
   'workerDomain.syncing': 'Syncing users to the Worker…',
   'workerDomain.synced': 'Users synced to the Worker.',
@@ -6756,6 +6760,11 @@ function renderWorkerDomainConfigs(data) {
   if (count) count.textContent = String(WD_CONFIGS.length);
   if (select) {
     select.replaceChildren();
+    var placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = t('workerDomain.selectUser');
+    placeholder.disabled = WD_CONFIGS.length > 0;
+    select.appendChild(placeholder);
     WD_CONFIGS.forEach(function (item, index) {
       var option = document.createElement('option');
       option.value = String(index);
@@ -6763,9 +6772,10 @@ function renderWorkerDomainConfigs(data) {
       select.appendChild(option);
     });
     if (oldValue !== '' && Number(oldValue) < WD_CONFIGS.length) select.value = oldValue;
+    else if (WD_CONFIGS.length) select.value = '0';
     select.disabled = !WD_CONFIGS.length;
   }
-  var empty = $id('wd-config-empty'); if (empty) empty.classList.toggle('hidden', !WD_STATE.connected || WD_CONFIGS.length > 0);
+  var empty = $id('wd-config-empty'); if (empty) empty.classList.toggle('hidden', WD_CONFIGS.length > 0);
   var output = $id('wd-config-output');
   if (output) output.value = WD_CONFIGS.length ? String(WD_CONFIGS[Number(select && select.value) || 0].config || '') : '';
 }
