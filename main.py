@@ -58,6 +58,14 @@ import sys as _sys
 _sys.modules.setdefault("main", _sys.modules[__name__])
 
 from vercel_relay import (VercelError, delete_vercel_project, deploy_to_vercel, verify_vercel_token)
+from cloudflare_worker_domain import (
+    CloudflareWorkerError,
+    attach_custom_domain as cf_attach_worker_domain,
+    delete_deployment as cf_delete_worker_domain,
+    deploy as cf_deploy_worker_domain,
+    list_accounts as cf_list_accounts,
+    list_zones as cf_list_zones,
+)
 
 # Telegram Web Proxy (TWP): framing, MTProxy crypto, signing key and relay.
 import twp as _twp
@@ -343,6 +351,11 @@ async def load_state():
                 # is never exposed as connected to the browser.
                 if not VERCEL.get("token") or not VERCEL.get("project_name") or not VERCEL.get("domain"):
                     VERCEL["connected"] = False
+            if isinstance(data.get("worker_domain"), dict):
+                WORKER_DOMAIN.update(data["worker_domain"])
+                WORKER_DOMAIN["deploying"] = False
+                if not all(WORKER_DOMAIN.get(k) for k in ("token", "account_id", "worker_name")):
+                    WORKER_DOMAIN["connected"] = False
             if isinstance(data.get("worker"), dict):
                 # Preserve connected=True state from saved state; don't let startup logic reset it.
                 was_connected = data["worker"].get("connected", False)
@@ -488,6 +501,7 @@ async def save_state():
                 "ip_blacklist": list(IP_BLACKLIST),
                 "worker": dict(WORKER),
                 "vercel_domain": {**VERCEL, "deploying": False},
+                "worker_domain": {**WORKER_DOMAIN, "deploying": False},
                 "nodes": dict(NODES),
                 "pending_node_deletions": dict(PENDING_NODE_DELETIONS),
                 "bot_orders": dict(BOT_ORDERS),
@@ -752,6 +766,28 @@ VERCEL: dict = {
     "last_error": "",
 }
 VERCEL_LOCK = asyncio.Lock()
+
+# Standalone Worker Domain deployments are separate from the Pages-based
+# Worker manager above. The Cloudflare token stays in server state only.
+WORKER_DOMAIN: dict = {
+    "connected": False,
+    "deploying": False,
+    "token": "",
+    "account_id": "",
+    "account_name": "",
+    "worker_name": "",
+    "worker_domain": "",
+    "worker_url": "",
+    "kv_namespace_id": "",
+    "kv_namespace_title": "",
+    "custom_domain": "",
+    "custom_domain_id": "",
+    "zone_id": "",
+    "zone_name": "",
+    "created_at": "",
+    "last_error": "",
+}
+WORKER_DOMAIN_LOCK = asyncio.Lock()
 
 # ── Telegram Bot automation ─────────────────────────────────────────────────
 # One scheduler handles channel publishing. One long-poller handles Sell Bot
@@ -13611,6 +13647,150 @@ async def vercel_domain_delete(_=Depends(require_auth)):
         })
     await save_state()
     return _vercel_public()
+
+
+def _worker_domain_public() -> dict:
+    connected = bool(WORKER_DOMAIN.get("connected") and WORKER_DOMAIN.get("worker_name"))
+    return {
+        "ok": True,
+        "connected": connected,
+        "deploying": bool(WORKER_DOMAIN.get("deploying")),
+        "account_id": str(WORKER_DOMAIN.get("account_id") or ""),
+        "account_name": str(WORKER_DOMAIN.get("account_name") or ""),
+        "worker_name": str(WORKER_DOMAIN.get("worker_name") or ""),
+        "worker_domain": str(WORKER_DOMAIN.get("worker_domain") or ""),
+        "worker_url": str(WORKER_DOMAIN.get("worker_url") or ""),
+        "custom_domain": str(WORKER_DOMAIN.get("custom_domain") or ""),
+        "zone_name": str(WORKER_DOMAIN.get("zone_name") or ""),
+        "created_at": str(WORKER_DOMAIN.get("created_at") or ""),
+        "last_error": str(WORKER_DOMAIN.get("last_error") or ""),
+    }
+
+
+@app.get("/api/system/worker-domain")
+async def worker_domain_status(_=Depends(require_auth)):
+    return _worker_domain_public()
+
+
+@app.post("/api/system/worker-domain/accounts")
+async def worker_domain_accounts(request: Request, _=Depends(require_auth)):
+    try:
+        body = await request.json()
+        token = str(body.get("token") or "").strip()
+        accounts = await cf_list_accounts(token)
+        if not accounts:
+            raise HTTPException(status_code=400, detail="This token cannot access a Cloudflare account")
+        return {"ok": True, "accounts": accounts}
+    except CloudflareWorkerError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/system/worker-domain")
+async def worker_domain_deploy(request: Request, _=Depends(require_auth)):
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid request body") from exc
+    token = str(body.get("token") or "").strip()
+    account_id = str(body.get("account_id") or "").strip()
+    if not token or len(token) > 4096 or not account_id:
+        raise HTTPException(status_code=400, detail="Cloudflare token and account are required")
+    async with WORKER_DOMAIN_LOCK:
+        if WORKER_DOMAIN.get("connected") or WORKER_DOMAIN.get("deploying"):
+            raise HTTPException(status_code=409, detail="A Worker Domain is already deployed. Delete it before deploying another.")
+        WORKER_DOMAIN["deploying"] = True
+        WORKER_DOMAIN["last_error"] = ""
+    try:
+        result = await cf_deploy_worker_domain(token, account_id, _vercel_normalize_domain(get_host()) or get_host())
+        async with WORKER_DOMAIN_LOCK:
+            WORKER_DOMAIN.update(result)
+            WORKER_DOMAIN.update({
+                "connected": True,
+                "deploying": False,
+                "created_at": now_ir().isoformat(timespec="seconds"),
+                "last_error": "",
+            })
+        await save_state()
+        return _worker_domain_public()
+    except CloudflareWorkerError as exc:
+        async with WORKER_DOMAIN_LOCK:
+            WORKER_DOMAIN["deploying"] = False
+            WORKER_DOMAIN["last_error"] = str(exc)[:500]
+        await save_state()
+        status = 400 if "token" in str(exc).lower() or "account" in str(exc).lower() else 502
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Unexpected Cloudflare Worker Domain deployment error")
+        async with WORKER_DOMAIN_LOCK:
+            WORKER_DOMAIN["deploying"] = False
+            WORKER_DOMAIN["last_error"] = "Cloudflare Worker deploy failed. Check token permissions and try again."
+        await save_state()
+        raise HTTPException(status_code=502, detail=WORKER_DOMAIN["last_error"]) from exc
+
+
+@app.get("/api/system/worker-domain/zones")
+async def worker_domain_zones(_=Depends(require_auth)):
+    async with WORKER_DOMAIN_LOCK:
+        if not WORKER_DOMAIN.get("connected"):
+            raise HTTPException(status_code=400, detail="Deploy a Worker first")
+        token = str(WORKER_DOMAIN.get("token") or "")
+        account_id = str(WORKER_DOMAIN.get("account_id") or "")
+    try:
+        return {"ok": True, "zones": await cf_list_zones(token, account_id)}
+    except CloudflareWorkerError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/system/worker-domain/custom-domain")
+async def worker_domain_attach(request: Request, _=Depends(require_auth)):
+    try:
+        body = await request.json()
+        zone_id = str(body.get("zone_id") or "").strip()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid request body") from exc
+    async with WORKER_DOMAIN_LOCK:
+        if not WORKER_DOMAIN.get("connected"):
+            raise HTTPException(status_code=400, detail="Deploy a Worker first")
+        if WORKER_DOMAIN.get("custom_domain_id"):
+            raise HTTPException(status_code=409, detail="A custom domain is already attached")
+        token = str(WORKER_DOMAIN.get("token") or "")
+        account_id = str(WORKER_DOMAIN.get("account_id") or "")
+        worker_name = str(WORKER_DOMAIN.get("worker_name") or "")
+        try:
+            zones = await cf_list_zones(token, account_id)
+            zone = next((item for item in zones if item["id"] == zone_id), None)
+            if not zone:
+                raise HTTPException(status_code=400, detail="Choose a zone from this Cloudflare account")
+            result = await cf_attach_worker_domain(token, account_id, worker_name, zone_id, zone["name"])
+        except CloudflareWorkerError as exc:
+            WORKER_DOMAIN["last_error"] = str(exc)[:500]
+            await save_state()
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        WORKER_DOMAIN.update(result)
+        WORKER_DOMAIN["last_error"] = ""
+        await save_state()
+        return _worker_domain_public()
+
+
+@app.delete("/api/system/worker-domain")
+async def worker_domain_delete(_=Depends(require_auth)):
+    async with WORKER_DOMAIN_LOCK:
+        if not WORKER_DOMAIN.get("connected"):
+            raise HTTPException(status_code=400, detail="No Worker Domain deployment is connected")
+        try:
+            await cf_delete_worker_domain(WORKER_DOMAIN)
+        except CloudflareWorkerError as exc:
+            WORKER_DOMAIN["last_error"] = str(exc)[:500]
+            await save_state()
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        WORKER_DOMAIN.update({
+            "connected": False, "deploying": False, "token": "", "account_id": "",
+            "account_name": "", "worker_name": "", "worker_domain": "", "worker_url": "",
+            "kv_namespace_id": "", "kv_namespace_title": "", "custom_domain": "",
+            "custom_domain_id": "", "zone_id": "", "zone_name": "", "created_at": "", "last_error": "",
+        })
+    await save_state()
+    return _worker_domain_public()
 
 
 @app.get("/api/worker")
