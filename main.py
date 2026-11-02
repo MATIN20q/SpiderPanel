@@ -65,6 +65,7 @@ from cloudflare_worker_domain import (
     deploy as cf_deploy_worker_domain,
     list_accounts as cf_list_accounts,
     list_zones as cf_list_zones,
+    sync_users as cf_sync_worker_domain_users,
 )
 
 # Telegram Web Proxy (TWP): framing, MTProxy crypto, signing key and relay.
@@ -773,6 +774,7 @@ WORKER_DOMAIN: dict = {
     "connected": False,
     "deploying": False,
     "token": "",
+    "control_token": "",
     "account_id": "",
     "account_name": "",
     "worker_name": "",
@@ -788,6 +790,7 @@ WORKER_DOMAIN: dict = {
     "last_error": "",
 }
 WORKER_DOMAIN_LOCK = asyncio.Lock()
+WORKER_DOMAIN_SYNC_LOCK = asyncio.Lock()
 
 # ── Telegram Bot automation ─────────────────────────────────────────────────
 # One scheduler handles channel publishing. One long-poller handles Sell Bot
@@ -12981,6 +12984,56 @@ async def _worker_enable_workers_dev() -> dict:
     return {"ok": True, "detail": "Pages deployment does not require workers.dev activation"}
 
 
+async def _worker_domain_user_payload() -> list[dict]:
+    result = []
+    async with USERS_LOCK:
+        users = list(USERS.items())
+    for uid, user in users:
+        if not isinstance(user, dict):
+            continue
+        config_uuid = str(user.get("config_uuid") or uid).strip()
+        if not _is_valid_uuid(config_uuid):
+            continue
+        expires = 0
+        if user.get("expire_at"):
+            try:
+                expires = int(datetime.fromisoformat(str(user["expire_at"])).timestamp())
+            except Exception:
+                pass
+        result.append({
+            "uuid": config_uuid,
+            "remark": str(user.get("username") or uid),
+            "limit_bytes": int(user.get("traffic_limit_bytes") or 0),
+            "expire": expires,
+            "used_bytes": int(user.get("traffic_used_bytes") or 0),
+            "concurrent_connections": int(user.get("concurrent_connections") or 0),
+            "proxy_ip": str(user.get("proxy_ip") or ""),
+            "proxy_ips": [str(x).strip() for x in (user.get("proxy_ips") or []) if str(x).strip()][:6],
+            "disabled": str(user.get("status") or "active").lower() != "active",
+        })
+    return result
+
+
+async def _worker_domain_sync_users() -> dict:
+    if not WORKER_DOMAIN.get("connected"):
+        return {"ok": False, "detail": "Worker Domain is not connected"}
+    async with WORKER_DOMAIN_SYNC_LOCK:
+        state = dict(WORKER_DOMAIN)
+        users = await _worker_domain_user_payload()
+        try:
+            response = await cf_sync_worker_domain_users(state, users)
+            async with WORKER_DOMAIN_LOCK:
+                WORKER_DOMAIN["last_error"] = ""
+            asyncio.create_task(save_state())
+            return {"ok": True, "count": len(users), "worker": response}
+        except CloudflareWorkerError as exc:
+            async with WORKER_DOMAIN_LOCK:
+                WORKER_DOMAIN["last_error"] = str(exc)[:500]
+            asyncio.create_task(save_state())
+            logger.warning("Worker Domain user sync failed: %s", exc)
+            return {"ok": False, "detail": str(exc)}
+
+
 async def _worker_sync_users() -> dict:
     """Push all panel users (with volume + expiry) to the worker's KV store.
 
@@ -12988,6 +13041,8 @@ async def _worker_sync_users() -> dict:
     worker via its admin API (POST /api/users) so the VLESS worker can
     authenticate them and enforce traffic/expiry. Returns {"ok": bool, count": N}.
     """
+    if WORKER_DOMAIN.get("connected"):
+        asyncio.create_task(_worker_domain_sync_users())
     domain = str(WORKER.get("worker_domain") or "").strip().lower()
     ctrl = str(WORKER.get("control_token") or "")
     if not domain or not ctrl or domain in ("localhost", "0.0.0.0", "127.0.0.1"):
@@ -13667,9 +13722,47 @@ def _worker_domain_public() -> dict:
     }
 
 
+def _worker_domain_configs() -> list[dict]:
+    domain = str(WORKER_DOMAIN.get("custom_domain") or WORKER_DOMAIN.get("worker_domain") or "").strip().lower()
+    if not domain:
+        return []
+    configs = []
+    for uid, user in sorted(USERS.items(), key=lambda item: str((item[1].get("username") if isinstance(item[1], dict) else "") or item[0]).casefold()):
+        if not isinstance(user, dict):
+            continue
+        config_uuid = str(user.get("config_uuid") or uid).strip()
+        if not _is_valid_uuid(config_uuid):
+            continue
+        username = str(user.get("username") or uid).strip()[:80]
+        path = f"/ws/{config_uuid}"
+        params = (
+            "encryption=none&security=tls&type=ws"
+            f"&host={quote(domain, safe='')}&path={quote(path, safe='')}"
+            f"&sni={quote(domain, safe='')}&fp=chrome&alpn=http%2F1.1"
+        )
+        configs.append({
+            "user_id": str(uid),
+            "username": str(user.get("username") or uid),
+            "active": str(user.get("status") or "active").lower() == "active",
+            "config": f"vless://{config_uuid}@{domain}:443?{params}#{quote('Spider-' + username + ' Worker', safe='')}",
+        })
+    return configs
+
+
 @app.get("/api/system/worker-domain")
 async def worker_domain_status(_=Depends(require_auth)):
     return _worker_domain_public()
+
+
+@app.get("/api/system/worker-domain/configs")
+async def worker_domain_configs(_=Depends(require_auth)):
+    async with WORKER_DOMAIN_LOCK:
+        if not WORKER_DOMAIN.get("connected"):
+            raise HTTPException(status_code=400, detail="Deploy a Worker first")
+    sync_result = await _worker_domain_sync_users()
+    if not sync_result.get("ok"):
+        raise HTTPException(status_code=502, detail=sync_result.get("detail") or "Worker user sync failed")
+    return {"ok": True, "configs": _worker_domain_configs(), "synced_users": sync_result.get("count", 0)}
 
 
 @app.post("/api/system/worker-domain/accounts")
@@ -13785,7 +13878,7 @@ async def worker_domain_delete(_=Depends(require_auth)):
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         WORKER_DOMAIN.update({
             "connected": False, "deploying": False, "token": "", "account_id": "",
-            "account_name": "", "worker_name": "", "worker_domain": "", "worker_url": "",
+            "account_name": "", "worker_name": "", "worker_domain": "", "worker_url": "", "control_token": "",
             "kv_namespace_id": "", "kv_namespace_title": "", "custom_domain": "",
             "custom_domain_id": "", "zone_id": "", "zone_name": "", "created_at": "", "last_error": "",
         })

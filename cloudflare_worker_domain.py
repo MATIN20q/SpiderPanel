@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import secrets
+import asyncio
 from pathlib import Path
 from urllib.parse import quote
 
@@ -109,8 +110,9 @@ async def deploy(token: str, account_id: str, panel_domain: str) -> dict:
             # custom domains can still route to the deployed Worker.
             account_subdomain = ""
         worker_domain = f"{worker_name}.{account_subdomain}.workers.dev" if account_subdomain else ""
+        control_token = "spider-domain-" + secrets.token_urlsafe(32)
         replacements = {
-            "__PANEL_TOKEN__": json.dumps("spider-domain-" + secrets.token_urlsafe(32)),
+            "__PANEL_TOKEN__": json.dumps(control_token),
             "__PANEL_DOMAIN__": json.dumps(panel_domain),
             "__WORKER_DOMAIN__": json.dumps(worker_domain),
         }
@@ -148,6 +150,7 @@ async def deploy(token: str, account_id: str, panel_domain: str) -> dict:
             "worker_name": worker_name,
             "worker_domain": worker_domain,
             "worker_url": f"https://{worker_domain}" if worker_domain else "",
+            "control_token": control_token,
             "kv_namespace_id": kv_id,
             "kv_namespace_title": kv_title,
             "token": token,
@@ -165,6 +168,41 @@ async def deploy(token: str, account_id: str, panel_domain: str) -> dict:
         except Exception:
             pass
         raise
+
+
+async def sync_users(state: dict, users: list[dict]) -> dict:
+    """Push current panel users into the Worker's KV control plane."""
+    domain = str(state.get("custom_domain") or state.get("worker_domain") or "").strip()
+    token = str(state.get("control_token") or "")
+    if not domain or not token:
+        raise CloudflareWorkerError("The Worker has no reachable domain yet")
+    url = f"https://{domain}/panel/config"
+    payload = {"users": users, "routes": {}, "proxies": {}, "settings": {}}
+    last_error = "Worker is not reachable yet"
+    for attempt, delay in enumerate((0, 2, 4, 8), 1):
+        if delay:
+            await asyncio.sleep(delay)
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+            try:
+                response = await client.post(
+                    url,
+                    headers={"Authorization": f"Bearer {token}"},
+                    json=payload,
+                )
+            except httpx.HTTPError as exc:
+                last_error = str(exc)
+                if attempt == 4:
+                    break
+                continue
+        if response.status_code == 200:
+            try:
+                return response.json()
+            except ValueError:
+                return {"ok": True}
+        last_error = f"Worker returned HTTP {response.status_code}: {response.text[:160]}"
+        if response.status_code not in (404, 502, 503, 504) or attempt == 4:
+            break
+    raise CloudflareWorkerError(f"Could not sync users to the Worker: {last_error}")
 
 
 async def attach_custom_domain(token: str, account_id: str, worker_name: str,
